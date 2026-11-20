@@ -17,6 +17,7 @@ from medstock.alerts import collect_alerts
 from medstock.dispensing import InsufficientStock, dispense
 from medstock.inventory import receive, stock_level
 from medstock.models import Batch
+from medstock.storage import StaleStock
 
 POLL_INTERVAL_SECONDS = 30
 MAX_BODY_BYTES = 64 * 1024
@@ -74,7 +75,7 @@ class MedStockApp:
             raise ApiError(HTTPStatus.NOT_FOUND, f"unknown medicine {sku}")
         try:
             plan = dispense(self.store, sku, quantity, self.today())
-        except InsufficientStock as exc:
+        except (InsufficientStock, StaleStock) as exc:
             raise ApiError(HTTPStatus.CONFLICT, str(exc)) from None
         return HTTPStatus.OK, {"sku": sku, "picked": [{"batch_no": b, "units": u} for b, u in plan]}
 

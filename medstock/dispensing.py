@@ -53,12 +53,14 @@ def pick_batches(batches: Iterable[Batch], quantity: int, today: date) -> List[T
 
 
 def dispense(store, sku: str, quantity: int, today: date) -> List[Tuple[str, int]]:
-    """Dispense ``quantity`` units of ``sku`` from ``store`` in FEFO order."""
-    batches = {b.batch_no: b for b in store.list_batches(sku)}
+    """Dispense ``quantity`` units of ``sku`` from ``store`` in FEFO order.
+
+    The plan is applied with ``store.apply_dispense``, which decrements each
+    batch conditionally inside one transaction (see ADR-0004).
+    """
     try:
-        plan = pick_batches(batches.values(), quantity, today)
+        plan = pick_batches(store.list_batches(sku), quantity, today)
     except InsufficientStock as exc:
         raise InsufficientStock(sku, exc.requested, exc.available) from None
-    for batch_no, units in plan:
-        store.update_batch_quantity(batch_no, batches[batch_no].quantity - units)
+    store.apply_dispense(plan)
     return plan

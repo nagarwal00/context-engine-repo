@@ -5,7 +5,7 @@ import unittest
 from datetime import date
 
 from medstock.models import Batch, Medicine
-from medstock.storage import SQLiteStore
+from medstock.storage import SQLiteStore, StaleStock
 
 
 class SQLiteStoreTests(unittest.TestCase):
@@ -44,6 +44,20 @@ class SQLiteStoreTests(unittest.TestCase):
     def test_batch_for_unknown_medicine_rejected(self):
         with self.assertRaises(KeyError):
             self.store.add_batch(Batch("L9", "NOPE", 1, date(2027, 1, 1), date(2026, 1, 1)))
+
+    def test_apply_dispense_decrements(self):
+        self.store.add_batch(Batch("L1", "AMX250", 30, date(2027, 1, 31), date(2026, 11, 2)))
+        self.store.add_batch(Batch("L2", "AMX250", 30, date(2027, 2, 28), date(2026, 11, 2)))
+        self.store.apply_dispense([("L1", 30), ("L2", 5)])
+        self.assertEqual({b.batch_no: b.quantity for b in self.store.list_batches()}, {"L1": 0, "L2": 25})
+
+    def test_stale_plan_is_rolled_back(self):
+        # Another terminal took 25 of L2 after this plan was computed.
+        self.store.add_batch(Batch("L1", "AMX250", 30, date(2027, 1, 31), date(2026, 11, 2)))
+        self.store.add_batch(Batch("L2", "AMX250", 5, date(2027, 2, 28), date(2026, 11, 2)))
+        with self.assertRaises(StaleStock):
+            self.store.apply_dispense([("L1", 30), ("L2", 10)])
+        self.assertEqual({b.batch_no: b.quantity for b in self.store.list_batches()}, {"L1": 30, "L2": 5})
 
     def test_expiry_indexes_exist(self):
         names = {r[0] for r in self.store.conn.execute(

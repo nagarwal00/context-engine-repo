@@ -4,9 +4,17 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import date
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from medstock.models import Batch, Medicine
+
+
+class StaleStock(Exception):
+    """A batch no longer holds the units a dispense plan expected."""
+
+    def __init__(self, batch_no: str) -> None:
+        super().__init__(f"batch {batch_no} changed since the plan was made; retry")
+        self.batch_no = batch_no
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS medicines (
@@ -93,6 +101,22 @@ class SQLiteStore:
             cur = self.conn.execute("UPDATE batches SET quantity = ? WHERE batch_no = ?", (quantity, batch_no))
         if cur.rowcount == 0:
             raise KeyError(f"unknown batch {batch_no}")
+
+    def apply_dispense(self, plan: List[Tuple[str, int]]) -> None:
+        """Atomically subtract units from batches.
+
+        Each decrement only succeeds if the batch still holds enough units, so
+        a plan computed from stale data (another terminal dispensed first) is
+        rolled back entirely instead of driving stock out of sync.
+        """
+        with self.conn:
+            for batch_no, units in plan:
+                cur = self.conn.execute(
+                    "UPDATE batches SET quantity = quantity - ? WHERE batch_no = ? AND quantity >= ?",
+                    (units, batch_no, units),
+                )
+                if cur.rowcount != 1:
+                    raise StaleStock(batch_no)
 
     def list_batches(self, sku: Optional[str] = None) -> List[Batch]:
         if sku is None:
