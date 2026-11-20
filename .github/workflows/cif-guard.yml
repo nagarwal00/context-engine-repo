@@ -1,0 +1,39 @@
+name: CIF Decision Guard
+
+# Checks every pull request against the architectural decisions recorded in
+# docs/adr/, using the active guard rules in cif_rules.json and the rule
+# evaluator from the Context Intelligence Framework (CIF).
+
+on:
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  decision-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check out the CIF engine
+        uses: actions/checkout@v4
+        with:
+          repository: nagarwal00/context-engine-prototype-
+          path: .cif
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Evaluate the PR diff against active guard rules
+        run: >
+          python tools/cif_guard.py
+          --engine .cif
+          --rules cif_rules.json
+          --base ${{ github.event.pull_request.base.sha }}
+          --head ${{ github.event.pull_request.head.sha }}
