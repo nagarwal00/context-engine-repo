@@ -32,6 +32,13 @@ class JSONStoreTests(unittest.TestCase):
         self.assertEqual(batch.quantity, 12)
         self.assertEqual(batch.expiry_date, date(2027, 1, 31))
 
+    def test_failed_write_keeps_previous_file(self):
+        before = self.store._read()
+        with self.assertRaises(TypeError):
+            self.store._write({"medicines": {"BAD": object()}, "batches": {}})
+        self.assertEqual(self.store._read(), before)
+        self.assertFalse(os.path.exists(self.store.path + ".tmp"))
+
     def test_batch_for_unknown_medicine_rejected(self):
         with self.assertRaises(KeyError):
             self.store.add_batch(Batch("L9", "NOPE", 1, date(2027, 1, 1), date(2026, 1, 1)))

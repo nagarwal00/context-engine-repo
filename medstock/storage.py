@@ -22,8 +22,18 @@ class JSONStore:
             return json.load(fh)
 
     def _write(self, data: dict) -> None:
-        with open(self.path, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2, sort_keys=True)
+        # Write to a temporary file and atomically replace the original so a
+        # crash mid-write never leaves a truncated inventory file behind.
+        tmp_path = f"{self.path}.tmp"
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, indent=2, sort_keys=True)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp_path, self.path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
     def add_medicine(self, medicine: Medicine) -> None:
         data = self._read()
