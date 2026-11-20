@@ -1,0 +1,7 @@
+sku,name,unit,reorder_level,batch_no,quantity,expiry_date,received_on
+PCM500,Paracetamol 500 mg,tablet,200,PCM-2406A,300,2026-12-31,2026-06-14
+PCM500,Paracetamol 500 mg,tablet,200,PCM-2409C,500,2027-08-31,2026-09-20
+AMX250,Amoxicillin 250 mg,capsule,60,AMX-2405B,40,2026-11-30,2025-12-02
+ORS,ORS sachet (WHO formula),sachet,50,ORS-2410A,120,2027-04-30,2026-10-05
+MET500,Metformin 500 mg,tablet,150,MET-2407D,90,2027-02-28,2026-07-18
+CTZ10,Cetirizine 10 mg,tablet,40,CTZ-2311A,25,2026-10-31,2025-11-10
