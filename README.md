@@ -96,6 +96,15 @@ template (Status / Context / Decision / Consequences).
 | [0004](docs/adr/0004-sqlite-storage.md) | Move storage to SQLite | Accepted |
 | [0005](docs/adr/0005-websocket-alert-push.md) | Push alerts over a WebSocket | Proposed |
 
+## Testing the Context Intelligence Framework
+
+This repository doubles as a real-world test bed for the
+[Context Intelligence Framework](https://github.com/nagarwal00/context-engine-prototype-).
+[docs/TESTING_WITH_CIF.md](docs/TESTING_WITH_CIF.md) maps every CIF feature
+to the commits, ADRs and code here and records what CIF produced on them.
+Pull requests into `main` are checked against the ADRs by the
+**CIF Decision Guard** workflow using the rules in `cif_rules.json`.
+
 ## Development
 
 ```bash
