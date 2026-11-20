@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Rejected (in favour of ADR-0003, FEFO dispensing)
 
 ## Context
 
@@ -15,8 +15,13 @@ default most inventory tools use and the simplest to explain to counter staff.
 Pick batches in FIFO order: the batch with the oldest `received_on` date is
 dispensed first.
 
+Rejected. Distributors do not deliver in expiry order: a delivery received
+later can carry a shorter shelf life than stock already on the shelf (short-
+dated lots are often sold at a discount). Under FIFO that newer, shorter-dated
+batch waits behind the older one and expires unsold. The rule optimises for
+arrival order, but the cost we are trying to avoid is expiry.
+
 ## Consequences
 
-- Simple rule, easy to verify by hand on the shelf.
-- Assumes deliveries arrive in expiry order. To be checked against real
-  delivery data before acceptance.
+- FIFO must not be reintroduced in `medstock/dispensing.py`.
+- Batch ordering is defined by ADR-0003 instead.
