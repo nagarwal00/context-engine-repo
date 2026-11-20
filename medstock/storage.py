@@ -34,9 +34,11 @@ class SQLiteStore:
     terminals cannot silently overwrite each other's changes.
     """
 
-    def __init__(self, path: str = ":memory:") -> None:
+    def __init__(self, path: str = ":memory:", check_same_thread: bool = True) -> None:
+        # check_same_thread=False is for the threaded HTTP API, which
+        # serialises all access to this connection with its own lock.
         self.path = path
-        self.conn = sqlite3.connect(path)
+        self.conn = sqlite3.connect(path, check_same_thread=check_same_thread)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA)
