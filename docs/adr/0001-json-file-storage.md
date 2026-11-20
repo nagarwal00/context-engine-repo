@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by ADR-0004 (SQLite storage)
 
 ## Context
 
@@ -22,3 +22,4 @@ Persist medicines and batches in one JSON document (`inventory.json`) through
 - Every write rewrites the entire file, so cost grows with inventory size.
 - Two processes writing at the same time can lose an update. Acceptable while
   only one counter terminal uses the tool; revisit if that changes.
+- Superseded by ADR-0004 once a second writer (the HTTP API) was planned.

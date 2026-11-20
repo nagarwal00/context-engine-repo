@@ -1,20 +1,20 @@
+import json
 import os
 import tempfile
 import unittest
 from datetime import date
 
 from medstock.models import Batch, Medicine
-from medstock.storage import JSONStore
+from medstock.storage import SQLiteStore
 
 
-class JSONStoreTests(unittest.TestCase):
+class SQLiteStoreTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.store = JSONStore(os.path.join(self.tmp.name, "inventory.json"))
+        self.store = SQLiteStore(":memory:")
         self.store.add_medicine(Medicine("AMX250", "Amoxicillin 250 mg", "capsule", 40))
 
     def tearDown(self):
-        self.tmp.cleanup()
+        self.store.close()
 
     def test_medicine_round_trip(self):
         med = self.store.get_medicine("AMX250")
@@ -32,16 +32,58 @@ class JSONStoreTests(unittest.TestCase):
         self.assertEqual(batch.quantity, 12)
         self.assertEqual(batch.expiry_date, date(2027, 1, 31))
 
-    def test_failed_write_keeps_previous_file(self):
-        before = self.store._read()
-        with self.assertRaises(TypeError):
-            self.store._write({"medicines": {"BAD": object()}, "batches": {}})
-        self.assertEqual(self.store._read(), before)
-        self.assertFalse(os.path.exists(self.store.path + ".tmp"))
+    def test_duplicate_batch_rejected(self):
+        self.store.add_batch(Batch("L1", "AMX250", 30, date(2027, 1, 31), date(2026, 11, 2)))
+        with self.assertRaises(ValueError):
+            self.store.add_batch(Batch("L1", "AMX250", 5, date(2027, 1, 31), date(2026, 11, 2)))
+
+    def test_update_unknown_batch_rejected(self):
+        with self.assertRaises(KeyError):
+            self.store.update_batch_quantity("NOPE", 1)
 
     def test_batch_for_unknown_medicine_rejected(self):
         with self.assertRaises(KeyError):
             self.store.add_batch(Batch("L9", "NOPE", 1, date(2027, 1, 1), date(2026, 1, 1)))
+
+    def test_data_persists_across_connections(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "medstock.db")
+            with SQLiteStore(path) as first:
+                first.add_medicine(Medicine("ORS", "ORS sachet", "sachet", 30))
+            with SQLiteStore(path) as second:
+                self.assertEqual(second.get_medicine("ORS").unit, "sachet")
+
+
+class LegacyImportTests(unittest.TestCase):
+    def test_imports_adr_0001_json_file(self):
+        legacy = {
+            "medicines": {"PCM500": {"name": "Paracetamol 500 mg", "unit": "tablet", "reorder_level": 100}},
+            "batches": {"P1": {"sku": "PCM500", "quantity": 60,
+                               "expiry_date": "2027-03-31", "received_on": "2026-10-01"}},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "inventory.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(legacy, fh)
+            with SQLiteStore(":memory:") as store:
+                self.assertEqual(store.import_legacy_json(path), 1)
+                [batch] = store.list_batches("PCM500")
+                self.assertEqual(batch.quantity, 60)
+
+    def test_failed_import_is_rolled_back(self):
+        legacy = {
+            "medicines": {"PCM500": {"name": "Paracetamol 500 mg"}},
+            "batches": {"P1": {"sku": "UNKNOWN", "quantity": 1,
+                               "expiry_date": "2027-03-31", "received_on": "2026-10-01"}},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "inventory.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(legacy, fh)
+            with SQLiteStore(":memory:") as store:
+                with self.assertRaises(Exception):
+                    store.import_legacy_json(path)
+                self.assertEqual(store.list_medicines(), [])
 
 
 if __name__ == "__main__":
