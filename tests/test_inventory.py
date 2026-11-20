@@ -1,25 +1,22 @@
-import os
-import tempfile
 import unittest
 from datetime import date
 
 from medstock.inventory import expired_batches, receive, stock_level, write_off_expired
 from medstock.models import Batch, Medicine
-from medstock.storage import JSONStore
+from medstock.storage import SQLiteStore
 
 TODAY = date(2026, 11, 21)
 
 
 class InventoryTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.store = JSONStore(os.path.join(self.tmp.name, "inv.json"))
+        self.store = SQLiteStore(":memory:")
         self.store.add_medicine(Medicine("ORS", "ORS sachet", "sachet", 30))
         receive(self.store, Batch("S1", "ORS", 20, date(2026, 11, 10), date(2025, 11, 1)))
         receive(self.store, Batch("S2", "ORS", 15, date(2027, 5, 31), date(2026, 10, 1)))
 
     def tearDown(self):
-        self.tmp.cleanup()
+        self.store.close()
 
     def test_receive_requires_registered_medicine(self):
         with self.assertRaises(KeyError):

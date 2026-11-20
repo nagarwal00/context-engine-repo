@@ -1,11 +1,9 @@
-import os
-import tempfile
 import unittest
 from datetime import date
 
 from medstock.dispensing import InsufficientStock, dispense, fefo_order, pick_batches
 from medstock.models import Batch, Medicine
-from medstock.storage import JSONStore
+from medstock.storage import SQLiteStore
 
 TODAY = date(2026, 11, 21)
 
@@ -52,8 +50,7 @@ class PickBatchesTests(unittest.TestCase):
 
 class DispenseTests(unittest.TestCase):
     def test_dispense_updates_store(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            store = JSONStore(os.path.join(tmp, "inv.json"))
+        with SQLiteStore(":memory:") as store:
             store.add_medicine(Medicine("PCM500", "Paracetamol 500 mg", "tablet", 50))
             store.add_batch(batch("A", 4, date(2027, 1, 1)))
             store.add_batch(batch("B", 10, date(2027, 2, 1)))

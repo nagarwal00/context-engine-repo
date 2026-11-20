@@ -1,94 +1,138 @@
-"""Persistence for medicines and batches using a single JSON file (ADR-0001)."""
+"""SQLite persistence for medicines and batches (ADR-0004, supersedes ADR-0001)."""
 from __future__ import annotations
 
 import json
-import os
+import sqlite3
 from datetime import date
 from typing import List, Optional
 
 from medstock.models import Batch, Medicine
 
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS medicines (
+    sku           TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    unit          TEXT NOT NULL DEFAULT 'unit',
+    reorder_level INTEGER NOT NULL DEFAULT 0 CHECK (reorder_level >= 0)
+);
+CREATE TABLE IF NOT EXISTS batches (
+    batch_no    TEXT PRIMARY KEY,
+    sku         TEXT NOT NULL REFERENCES medicines(sku),
+    quantity    INTEGER NOT NULL CHECK (quantity >= 0),
+    expiry_date TEXT NOT NULL,
+    received_on TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_batches_sku_expiry ON batches (sku, expiry_date);
+CREATE INDEX IF NOT EXISTS idx_batches_expiry ON batches (expiry_date);
+"""
 
-class JSONStore:
-    """Stores all inventory data in one JSON document on disk."""
 
-    def __init__(self, path: str) -> None:
+class SQLiteStore:
+    """Inventory store backed by a single SQLite database file.
+
+    Each public write runs in its own transaction, so concurrent counter
+    terminals cannot silently overwrite each other's changes.
+    """
+
+    def __init__(self, path: str = ":memory:") -> None:
         self.path = path
-        if not os.path.exists(path):
-            self._write({"medicines": {}, "batches": {}})
+        self.conn = sqlite3.connect(path)
+        self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA foreign_keys = ON")
+        self.conn.executescript(SCHEMA)
+        self.conn.commit()
 
-    def _read(self) -> dict:
-        with open(self.path, "r", encoding="utf-8") as fh:
-            return json.load(fh)
+    def close(self) -> None:
+        self.conn.close()
 
-    def _write(self, data: dict) -> None:
-        # Write to a temporary file and atomically replace the original so a
-        # crash mid-write never leaves a truncated inventory file behind.
-        tmp_path = f"{self.path}.tmp"
-        try:
-            with open(tmp_path, "w", encoding="utf-8") as fh:
-                json.dump(data, fh, indent=2, sort_keys=True)
-                fh.flush()
-                os.fsync(fh.fileno())
-            os.replace(tmp_path, self.path)
-        finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+    def __enter__(self) -> "SQLiteStore":
+        return self
 
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+    # medicines -----------------------------------------------------------
     def add_medicine(self, medicine: Medicine) -> None:
-        data = self._read()
-        if medicine.sku in data["medicines"]:
-            raise ValueError(f"medicine {medicine.sku} already exists")
-        data["medicines"][medicine.sku] = {
-            "name": medicine.name,
-            "unit": medicine.unit,
-            "reorder_level": medicine.reorder_level,
-        }
-        self._write(data)
+        try:
+            with self.conn:
+                self.conn.execute(
+                    "INSERT INTO medicines (sku, name, unit, reorder_level) VALUES (?, ?, ?, ?)",
+                    (medicine.sku, medicine.name, medicine.unit, medicine.reorder_level),
+                )
+        except sqlite3.IntegrityError:
+            raise ValueError(f"medicine {medicine.sku} already exists") from None
 
     def get_medicine(self, sku: str) -> Optional[Medicine]:
-        row = self._read()["medicines"].get(sku)
-        if row is None:
-            return None
-        return Medicine(sku, row["name"], row["unit"], row["reorder_level"])
+        row = self.conn.execute("SELECT * FROM medicines WHERE sku = ?", (sku,)).fetchone()
+        return self._medicine(row) if row else None
 
     def list_medicines(self) -> List[Medicine]:
-        meds = self._read()["medicines"]
-        return [Medicine(sku, r["name"], r["unit"], r["reorder_level"]) for sku, r in sorted(meds.items())]
+        rows = self.conn.execute("SELECT * FROM medicines ORDER BY sku").fetchall()
+        return [self._medicine(r) for r in rows]
 
+    # batches -------------------------------------------------------------
     def add_batch(self, batch: Batch) -> None:
-        data = self._read()
-        if batch.sku not in data["medicines"]:
+        if self.get_medicine(batch.sku) is None:
             raise KeyError(f"unknown medicine {batch.sku}")
-        if batch.batch_no in data["batches"]:
-            raise ValueError(f"batch {batch.batch_no} already exists")
-        data["batches"][batch.batch_no] = {
-            "sku": batch.sku,
-            "quantity": batch.quantity,
-            "expiry_date": batch.expiry_date.isoformat(),
-            "received_on": batch.received_on.isoformat(),
-        }
-        self._write(data)
+        try:
+            with self.conn:
+                self.conn.execute(
+                    "INSERT INTO batches (batch_no, sku, quantity, expiry_date, received_on) VALUES (?, ?, ?, ?, ?)",
+                    (batch.batch_no, batch.sku, batch.quantity,
+                     batch.expiry_date.isoformat(), batch.received_on.isoformat()),
+                )
+        except sqlite3.IntegrityError:
+            raise ValueError(f"batch {batch.batch_no} already exists") from None
 
     def update_batch_quantity(self, batch_no: str, quantity: int) -> None:
         if quantity < 0:
             raise ValueError("quantity must be >= 0")
-        data = self._read()
-        if batch_no not in data["batches"]:
+        with self.conn:
+            cur = self.conn.execute("UPDATE batches SET quantity = ? WHERE batch_no = ?", (quantity, batch_no))
+        if cur.rowcount == 0:
             raise KeyError(f"unknown batch {batch_no}")
-        data["batches"][batch_no]["quantity"] = quantity
-        self._write(data)
 
     def list_batches(self, sku: Optional[str] = None) -> List[Batch]:
-        batches = []
-        for batch_no, r in sorted(self._read()["batches"].items()):
-            if sku is not None and r["sku"] != sku:
-                continue
-            batches.append(Batch(
-                batch_no=batch_no,
-                sku=r["sku"],
-                quantity=r["quantity"],
-                expiry_date=date.fromisoformat(r["expiry_date"]),
-                received_on=date.fromisoformat(r["received_on"]),
-            ))
-        return batches
+        if sku is None:
+            rows = self.conn.execute("SELECT * FROM batches ORDER BY batch_no").fetchall()
+        else:
+            rows = self.conn.execute("SELECT * FROM batches WHERE sku = ? ORDER BY batch_no", (sku,)).fetchall()
+        return [self._batch(r) for r in rows]
+
+    # migration -----------------------------------------------------------
+    def import_legacy_json(self, json_path: str) -> int:
+        """Import an ``inventory.json`` written by the ADR-0001 JSON store.
+
+        Runs in one transaction: either everything is imported or nothing.
+        Returns the number of batches imported.
+        """
+        with open(json_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        with self.conn:
+            for sku, m in data.get("medicines", {}).items():
+                self.conn.execute(
+                    "INSERT INTO medicines (sku, name, unit, reorder_level) VALUES (?, ?, ?, ?)",
+                    (sku, m["name"], m.get("unit", "unit"), m.get("reorder_level", 0)),
+                )
+            batches = data.get("batches", {})
+            for batch_no, b in batches.items():
+                self.conn.execute(
+                    "INSERT INTO batches (batch_no, sku, quantity, expiry_date, received_on) VALUES (?, ?, ?, ?, ?)",
+                    (batch_no, b["sku"], b["quantity"], b["expiry_date"], b["received_on"]),
+                )
+        return len(batches)
+
+    # row mapping ---------------------------------------------------------
+    @staticmethod
+    def _medicine(row: sqlite3.Row) -> Medicine:
+        return Medicine(row["sku"], row["name"], row["unit"], row["reorder_level"])
+
+    @staticmethod
+    def _batch(row: sqlite3.Row) -> Batch:
+        return Batch(
+            batch_no=row["batch_no"],
+            sku=row["sku"],
+            quantity=row["quantity"],
+            expiry_date=date.fromisoformat(row["expiry_date"]),
+            received_on=date.fromisoformat(row["received_on"]),
+        )
