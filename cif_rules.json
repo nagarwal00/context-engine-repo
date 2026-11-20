@@ -1,0 +1,43 @@
+[
+  {
+    "rule_id": "rule_forbid_fifo_sort_dispensing",
+    "decision_id": "dec_nagarwal00_context-engine-repo_adr_docs_adr_0003-fefo-dispensing_md",
+    "decision_title": "ADR-0003: Dispense batches in FEFO (first-expiry, first-out) order",
+    "rule_type": "forbid_pattern",
+    "status": "active",
+    "polarity": "must_not",
+    "source": "human_reviewed",
+    "params": {
+      "regex": "key\\s*=\\s*lambda\\s+\\w+\\s*:\\s*\\(?\\s*\\w+\\.received_on",
+      "paths": ["medstock/dispensing.py"],
+      "message": "Sorting dispensable batches by received_on reintroduces FIFO, rejected in ADR-0002; ADR-0003 requires FEFO (sort by expiry_date)"
+    }
+  },
+  {
+    "rule_id": "rule_forbid_fifo_name_dispensing",
+    "decision_id": "dec_nagarwal00_context-engine-repo_adr_docs_adr_0002-fifo-dispensing_md",
+    "decision_title": "ADR-0002: Dispense batches in FIFO order (Rejected)",
+    "rule_type": "forbid_pattern",
+    "status": "active",
+    "polarity": "must_not",
+    "source": "human_reviewed",
+    "params": {
+      "regex": "(?i)\\bdef\\s+fifo\\w*|\\bfifo_order\\b",
+      "paths": ["medstock/**/*.py", "medstock/*.py"],
+      "message": "A FIFO ordering helper reintroduces the approach rejected in ADR-0002"
+    }
+  },
+  {
+    "rule_id": "rule_forbid_postgres_driver",
+    "decision_id": "dec_nagarwal00_context-engine-repo_adr_docs_adr_0004-sqlite-storage_md",
+    "decision_title": "ADR-0004: Move inventory storage to SQLite",
+    "rule_type": "forbid_import",
+    "status": "active",
+    "polarity": "must_not",
+    "source": "human_reviewed",
+    "params": {
+      "module": "psycopg2",
+      "paths": ["medstock/**/*.py", "medstock/*.py"]
+    }
+  }
+]
