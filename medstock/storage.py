@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS batches (
     expiry_date TEXT NOT NULL,
     received_on TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_batches_sku_expiry ON batches (sku, expiry_date);
+CREATE INDEX IF NOT EXISTS idx_batches_expiry ON batches (expiry_date);
 """
 
 

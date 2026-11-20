@@ -45,6 +45,12 @@ class SQLiteStoreTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.store.add_batch(Batch("L9", "NOPE", 1, date(2027, 1, 1), date(2026, 1, 1)))
 
+    def test_expiry_indexes_exist(self):
+        names = {r[0] for r in self.store.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'batches'")}
+        self.assertIn("idx_batches_sku_expiry", names)
+        self.assertIn("idx_batches_expiry", names)
+
     def test_data_persists_across_connections(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "medstock.db")
