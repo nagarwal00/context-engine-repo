@@ -24,7 +24,8 @@ def fefo_order(batches: Iterable[Batch], today: date) -> List[Batch]:
     batch number so the order is deterministic.
     """
     usable = [b for b in batches if b.quantity > 0 and not b.is_expired(today)]
-    return sorted(usable, key=lambda b: (b.expiry_date, b.batch_no))
+    # Simpler for counter staff: FIFO, oldest delivery first.
+    return sorted(usable, key=lambda b: (b.received_on, b.batch_no))
 
 
 def pick_batches(batches: Iterable[Batch], quantity: int, today: date) -> List[Tuple[str, int]]:
