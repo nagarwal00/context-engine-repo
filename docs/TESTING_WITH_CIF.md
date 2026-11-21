@@ -5,7 +5,8 @@ written so that every capability of the
 [Context Intelligence Framework (CIF)](https://github.com/nagarwal00/context-engine-prototype-)
 has real material to work on. This page maps each CIF feature to what in this
 repository exercises it, how to run it, and what CIF produced when it was run
-on this repository on 20 November 2026.
+on this repository. The figures below come from a full live ingestion
+from GitHub on 21 November 2026 (20 commits on `main`).
 
 Nothing here is synthetic: the commits, ADRs, code and diffs are the ones in
 this repository.
@@ -60,9 +61,9 @@ http://127.0.0.1:8080/) and ingest `nagarwal00/context-engine-repo`.
 
 ### 1. Multi-source ingestion and evidence grounding
 - **Input:** commits, tree, Python files and `docs/adr/*.md`.
-- **Observed:** all 17 commits that existed at the time ingested (the default window is 25), 62 function
-  entities and 18 file entities, every decision linked to a real commit or ADR
-  URL.
+- **Observed:** all 20 commits and all 5 ADRs ingested (25 events), 34 file
+  and 43 function entities, 24 decisions, 122 graph edges. Every decision
+  links to a real commit or ADR URL.
 - **Where to look:** Evidence Panel, Project Timeline.
 
 ### 2. AST entity resolution
@@ -74,16 +75,27 @@ http://127.0.0.1:8080/) and ingest `nagarwal00/context-engine-repo`.
 - **Observed:** all five ADR states in the table above.
 - **Where to look:** Decision Explorer, filtered by state.
 
+### Running reconciliation (needed for sections 4 and 5)
+Ingestion does not run conflict or supersession detection, and no server
+route or UI button calls it (only `run_demo.py` does). After ingesting, run
+it once from the CIF checkout:
+
+```powershell
+python -c "from backend.db import Database; from backend.engine.reconciliation import ReconciliationEngine as R; r=R(Database('context_intelligence.db')); n='nagarwal00/context-engine-repo'; print(r.check_for_conflicts(n)); print(r.detect_supersessions(n))"
+```
+
 ### 4. Conflict detection
-- **Observed:** `polling vs websocket` between ADR-0005 (proposes WebSocket
+- **Observed (after reconciliation):** `polling vs websocket` between ADR-0005 (proposes WebSocket
   push) and the README commit (documents 30-second polling of `GET /alerts`).
   This is a real open design question.
 - **Where to look:** Context Graph (`conflicts_with` edge), Review Queue
   (`conflict` item).
 
 ### 5. Supersession
-- **Observed:** CIF proposes supersession candidates for review, for example
-  "Persist inventory in a single JSON file (ADR-0001)" being superseded.
+- **Observed (after reconciliation):** 4 supersession candidates, for
+  example "Persist inventory in a single JSON file (ADR-0001)" and the SQLite
+  migration being followed by later storage changes. See behaviour 2 below
+  for one false positive.
 - **Where to look:** Context Graph (`supersedes` edges), Review Queue
   (`supersession_candidate` items).
 
@@ -119,8 +131,8 @@ written by hand. That is CIF's intended review step.
 
 - **Observed with the rules approved:** `drift_detected: true`, a finding
   for `rule_forbid_fifo_sort_dispensing` at `medstock/dispensing.py` line 28
-  with signal strength `high`, and two advisory rejected-idea findings (tier
-  `strong` and `possible`).
+  with signal strength `high`, and two advisory rejected-idea findings (both
+  tier `strong`).
 - **Clean change:** a diff that only changes `DEFAULT_EXPIRY_WINDOW_DAYS` in
   `medstock/alerts.py` gives `drift_detected: false`.
 
@@ -156,19 +168,20 @@ python tools/cif_guard.py --engine <path to CIF checkout> --base main --head dem
 - **Where to look:** Project Timeline → as-of control.
 
 ### 10. Review queue
-- **Observed:** 53 items of types `decision`, `conflict`,
-  `supersession_candidate` and `possible_rejected_idea`.
+- **Observed:** 24 `decision` items straight after ingestion; 39 items after
+  reconciliation and a drift check, adding `conflict`,
+  `supersession_candidate` and `drift` items.
 - **Where to look:** Review Queue; confirm or reject items.
 
 ### 11. Bus factor and onboarding
-- **Observed:** overall bus factor `1` across 5 modules. This is accurate:
+- **Observed:** overall bus factor `1` across 7 modules. This is accurate:
   every commit so far has one author. Commits from a second contributor
   would change it.
-- **Onboarding:** 23 checklist items generated for the repository.
+- **Onboarding:** 26 checklist items generated for the repository.
 - **Where to look:** Metrics, Onboarding Tour.
 
 ### 12. Browser and VS Code extensions
-Not run as part of the 20 November verification. With the CIF server running
+Not run as part of the verification. With the CIF server running
 and this repository ingested:
 - **Browser extension:** open the `demo/fifo-regression` pull request page on
   GitHub with the CIF extension loaded.
@@ -196,6 +209,8 @@ results are read correctly:
 4. **The static GitHub Pages build ingests commits and the file tree only**
    (no ADRs, issues or pull requests). Use the local server for ADR-driven
    features.
-5. **Issues and pull requests:** this repository has none yet apart from
+5. **Conflict and supersession detection are not wired into the server.**
+   They only appear after running reconciliation manually (see above).
+6. **Issues and pull requests:** this repository has none yet apart from
    the demo PR you open. CIF's issue/PR ingestion and `Closes #N` linkage
    need issues and PRs to exist on GitHub.
