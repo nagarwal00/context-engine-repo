@@ -38,26 +38,72 @@ this repository.
 Alternatives CIF extracted from the "We considered X, but Y" sentences:
 `FIFO by received date` (ADR-0003) and `PostgreSQL` (ADR-0004).
 
-## Before you start
+## Set up with your CIF project
 
-CIF calls the GitHub REST API. Without a token GitHub allows **60 requests
-per hour per IP address**, and one full ingestion of this repository needs
-roughly 35 (commit list, up to 15 commit details, tree, issues, each Python
-file, each ADR). If you ingest twice in an hour without a token, the second
-run stops part-way: commits arrive but the tree, ADRs and some modules do not.
+These steps need a CIF version that includes the ingest fixes of
+21 November 2026 (repository registration, admin access for the signed-in
+local user, a clear rate-limit error instead of invented commits). Paths
+below assume CIF is checked out at `C:\Users\HP\Desktop\SE_project` and this
+repository at `C:\Users\HP\Desktop\context-engine-repo`.
 
-Use a token (no scopes needed for a public repository):
+**1. Create a GitHub token.** GitHub allows only 60 unauthenticated requests
+per hour *per public IP address*, shared with every other device on your
+network, and one ingestion of this repository needs about 35. On a shared
+campus or office network the quota is often already used up. Create a token
+at https://github.com/settings/tokens (classic, no scopes needed for a public
+repository) and add this line to CIF's `.env` file:
 
-```powershell
-$env:GITHUB_TOKEN = "<your token>"
+```
+GITHUB_TOKEN=<your token>
 ```
 
-or paste it into the token field of the CIF ingest dialog.
+`server.py` reads `.env` on start. Alternatively paste the token into the
+token field of the ingest dialog each time.
+
+**2. Start CIF.** Keep `CIF_DEV_MODE=1` in `.env` for local ingestion.
+
+```powershell
+cd C:\Users\HP\Desktop\SE_project
+```
+
+```powershell
+python server.py
+```
+
+Open http://127.0.0.1:8080/ and sign in (Sign in as Demo Developer is fine).
+
+**3. Ingest this repository.** Workspace (top bar) → paste
+`https://github.com/nagarwal00/context-engine-repo` → Connect → Ingest &
+Extract Context. Leave "Start with Empty Dashboard" ticked to see only this
+repository, or untick it to keep the pilot demo data.
+
+**4. Load the guard rules and run reconciliation.** Ingestion creates no
+guard rules and does not run conflict or supersession detection. In a second
+terminal:
+
+```powershell
+cd C:\Users\HP\Desktop\context-engine-repo
+```
+
+```powershell
+python tools/cif_setup.py --engine C:\Users\HP\Desktop\SE_project
+```
+
+It adds the three rules from `cif_rules.json` as *proposed* and records the
+conflict and supersession candidates. Add `--activate` to skip the approval
+step.
+
+**5. Use the dashboard.** Refresh the page and pick
+`nagarwal00/context-engine-repo` in the Repository selector. In Review Queue
+press **Approve (Enforce in CI)** on the three MedStock rules. Then open Live
+CI Drift Check, paste the diff from section 6 below and run it.
+
+**Live GitHub Pages site:** https://nagarwal00.github.io/context-engine-prototype-/
+ingests commits and the file tree only, in the browser, and needs the same
+token once the shared quota is used up. ADRs, guard rules, conflicts and the
+review queue need the local server.
 
 ## Feature-by-feature
-
-Run the CIF server from the CIF checkout (`python server.py`, then open
-http://127.0.0.1:8080/) and ingest `nagarwal00/context-engine-repo`.
 
 ### 1. Multi-source ingestion and evidence grounding
 - **Input:** commits, tree, Python files and `docs/adr/*.md`.
@@ -75,14 +121,10 @@ http://127.0.0.1:8080/) and ingest `nagarwal00/context-engine-repo`.
 - **Observed:** all five ADR states in the table above.
 - **Where to look:** Decision Explorer, filtered by state.
 
-### Running reconciliation (needed for sections 4 and 5)
+### Reconciliation (needed for sections 4 and 5)
 Ingestion does not run conflict or supersession detection, and no server
-route or UI button calls it (only `run_demo.py` does). After ingesting, run
-it once from the CIF checkout:
-
-```powershell
-python -c "from backend.db import Database; from backend.engine.reconciliation import ReconciliationEngine as R; r=R(Database('context_intelligence.db')); n='nagarwal00/context-engine-repo'; print(r.check_for_conflicts(n)); print(r.detect_supersessions(n))"
-```
+route or UI button calls it (only `run_demo.py` does). Setup step 4
+(`tools/cif_setup.py`) runs it.
 
 ### 4. Conflict detection
 - **Observed (after reconciliation):** `polling vs websocket` between ADR-0005 (proposes WebSocket
@@ -202,15 +244,23 @@ results are read correctly:
    that implements it.** "Implement FEFO batch picking ... (ADR-0003)" was
    treated as superseding ADR-0003, so ADR-0003 appeared as `superseded` after
    reconciliation even though its file says Accepted.
-3. **A 403 from GitHub on the commit list crashes ingestion** with
-   `NameError: name 'datetime' is not defined` in
-   `backend/ingestion/live_github.py`, which uses `datetime` without importing
-   it.
+3. **Fixed in CIF on 21 November 2026, found while testing with this
+   repository:**
+   - A 403 from GitHub crashed ingestion with `NameError: name 'datetime' is
+     not defined`, and the code behind it would have invented four placeholder
+     commits. It now stops with a message asking for a GitHub token.
+   - Repositories ingested from the Workspace were never registered, so they
+     could not be selected in the dashboard and returned 404. They are now
+     registered, and the user who ingested one can review it.
+   - A signed-in local user got 403 "Admin permission required" on Connect &
+     Ingest. In dev mode on localhost this is now allowed.
+   - Live CI Drift Check always checked the pilot demo repositories. It now
+     checks the repository selected in the top bar and the files in the diff.
 4. **The static GitHub Pages build ingests commits and the file tree only**
    (no ADRs, issues or pull requests). Use the local server for ADR-driven
    features.
 5. **Conflict and supersession detection are not wired into the server.**
-   They only appear after running reconciliation manually (see above).
+   They only appear after running `tools/cif_setup.py` (setup step 4).
 6. **Issues and pull requests:** this repository has none yet apart from
    the demo PR you open. CIF's issue/PR ingestion and `Closes #N` linkage
    need issues and PRs to exist on GitHub.
